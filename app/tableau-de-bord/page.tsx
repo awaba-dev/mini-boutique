@@ -4,29 +4,105 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+type Boutique = {
+  id: string;
+  nom: string;
+  slug: string;
+  whatsapp: string;
+};
+
+// Transforme "Chez Fatou Élégance" en "chez-fatou-elegance"
+function creerSlug(texte: string) {
+  return texte
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Transforme "77 123 45 67" en "221771234567"
+function nettoyerNumero(numero: string) {
+  let chiffres = numero.replace(/\D/g, "");
+  if (chiffres.length === 9) {
+    chiffres = "221" + chiffres;
+  }
+  return chiffres;
+}
+
 export default function TableauDeBordPage() {
   const router = useRouter();
-  const [email, setEmail] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [boutique, setBoutique] = useState<Boutique | null>(null);
+  const [chargement, setChargement] = useState(true);
+
+  const [nom, setNom] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [message, setMessage] = useState("");
+  const [envoi, setEnvoi] = useState(false);
 
   useEffect(() => {
-    async function verifierConnexion() {
+    async function chargerDonnees() {
       const { data } = await supabase.auth.getUser();
 
       if (!data.user) {
         router.push("/connexion");
-      } else {
-        setEmail(data.user.email ?? "");
+        return;
       }
+
+      setUserId(data.user.id);
+      setEmail(data.user.email ?? "");
+
+      const { data: maBoutique } = await supabase
+        .from("boutiques")
+        .select("id, nom, slug, whatsapp")
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+
+      setBoutique(maBoutique);
+      setChargement(false);
     }
-    verifierConnexion();
+    chargerDonnees();
   }, [router]);
+
+  async function creerBoutique(e: React.FormEvent) {
+    e.preventDefault();
+    if (!userId) return;
+
+    setEnvoi(true);
+    setMessage("");
+
+    const { data, error } = await supabase
+      .from("boutiques")
+      .insert({
+        user_id: userId,
+        nom: nom,
+        slug: creerSlug(nom),
+        whatsapp: nettoyerNumero(whatsapp),
+      })
+      .select("id, nom, slug, whatsapp")
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        setMessage("❌ Ce nom de boutique est déjà pris. Essaie un autre nom.");
+      } else {
+        setMessage("❌ " + error.message);
+      }
+    } else {
+      setBoutique(data);
+    }
+
+    setEnvoi(false);
+  }
 
   async function seDeconnecter() {
     await supabase.auth.signOut();
     router.push("/connexion");
   }
 
-  if (email === null) {
+  if (chargement) {
     return (
       <main className="min-h-screen flex items-center justify-center">
         <p className="text-gray-600">Chargement...</p>
@@ -36,22 +112,86 @@ export default function TableauDeBordPage() {
 
   return (
     <main className="min-h-screen bg-green-50 p-6">
-      <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-md flex flex-col gap-4">
-        <h1 className="text-2xl font-bold text-green-700">
-          Bonjour 👋
-        </h1>
-        <p className="text-gray-700">
-          Tu es connectée avec : <strong>{email}</strong>
-        </p>
-        <p className="text-gray-600">
-          Bientôt ici : ta boutique et tes produits 🛍️
-        </p>
-        <button
-          onClick={seDeconnecter}
-          className="self-start bg-gray-200 text-gray-800 px-5 py-2 rounded-full font-semibold"
-        >
-          Se déconnecter
-        </button>
+      <div className="max-w-2xl mx-auto flex flex-col gap-6">
+        {/* En-tête */}
+        <div className="flex items-center justify-between">
+          <p className="text-gray-700">
+            Connectée : <strong>{email}</strong>
+          </p>
+          <button
+            onClick={seDeconnecter}
+            className="bg-gray-200 text-gray-800 px-4 py-2 rounded-full text-sm font-semibold"
+          >
+            Se déconnecter
+          </button>
+        </div>
+
+        {boutique ? (
+          /* La vendeuse a une boutique */
+          <div className="bg-white p-8 rounded-2xl shadow-md flex flex-col gap-3">
+            <h1 className="text-2xl font-bold text-green-700">
+              🛍️ {boutique.nom}
+            </h1>
+            <p className="text-gray-700">
+              📱 WhatsApp : <strong>+{boutique.whatsapp}</strong>
+            </p>
+            <p className="text-gray-700">
+              🔗 Ton futur lien : <strong>/boutique/{boutique.slug}</strong>
+            </p>
+            <p className="text-gray-500 text-sm">
+              Bientôt : ajoute tes produits ici ✨
+            </p>
+          </div>
+        ) : (
+          /* La vendeuse n'a pas encore de boutique */
+          <form
+            onSubmit={creerBoutique}
+            className="bg-white p-8 rounded-2xl shadow-md flex flex-col gap-4"
+          >
+            <h1 className="text-2xl font-bold text-green-700">
+              Créer ma boutique 🛍️
+            </h1>
+
+            <label className="flex flex-col gap-1 text-gray-700">
+              Nom de la boutique
+              <input
+                type="text"
+                required
+                value={nom}
+                onChange={(e) => setNom(e.target.value)}
+                className="border rounded-lg p-3 text-gray-900"
+                placeholder="Chez Fatou"
+              />
+            </label>
+            {nom && (
+              <p className="text-sm text-gray-500 -mt-2">
+                Ton lien sera : /boutique/{creerSlug(nom)}
+              </p>
+            )}
+
+            <label className="flex flex-col gap-1 text-gray-700">
+              Numéro WhatsApp
+              <input
+                type="tel"
+                required
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                className="border rounded-lg p-3 text-gray-900"
+                placeholder="77 123 45 67"
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={envoi}
+              className="bg-green-600 text-white py-3 rounded-full font-semibold disabled:opacity-50"
+            >
+              {envoi ? "Création..." : "Créer ma boutique"}
+            </button>
+
+            {message && <p className="text-center text-gray-800">{message}</p>}
+          </form>
+        )}
       </div>
     </main>
   );
