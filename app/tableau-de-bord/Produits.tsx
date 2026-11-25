@@ -9,6 +9,7 @@ type Produit = {
   prix: number;
   description: string | null;
   disponible: boolean;
+  image_url: string | null;
 };
 
 export default function Produits({ boutiqueId }: { boutiqueId: string }) {
@@ -16,6 +17,7 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
   const [nom, setNom] = useState("");
   const [prix, setPrix] = useState("");
   const [description, setDescription] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [envoi, setEnvoi] = useState(false);
 
@@ -30,7 +32,7 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
     async function chargerProduits() {
       const { data } = await supabase
         .from("produits")
-        .select("id, nom, prix, description, disponible")
+        .select("id, nom, prix, description, disponible, image_url")
         .eq("boutique_id", boutiqueId)
         .order("created_at", { ascending: false });
 
@@ -39,11 +41,41 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
     chargerProduits();
   }, [boutiqueId]);
 
+  // Envoyer une photo dans le Storage et récupérer son lien
+  async function envoyerPhoto(fichier: File) {
+    const { data: utilisateur } = await supabase.auth.getUser();
+    if (!utilisateur.user) return null;
+
+    const extension = fichier.name.split(".").pop();
+    const chemin = utilisateur.user.id + "/" + Date.now() + "." + extension;
+
+    const { error } = await supabase.storage
+      .from("images")
+      .upload(chemin, fichier);
+
+    if (error) {
+      setMessage("❌ Photo : " + error.message);
+      return null;
+    }
+
+    const { data } = supabase.storage.from("images").getPublicUrl(chemin);
+    return data.publicUrl;
+  }
+
   // Ajouter un produit
   async function ajouterProduit(e: React.FormEvent) {
     e.preventDefault();
     setEnvoi(true);
     setMessage("");
+
+    let imageUrl: string | null = null;
+    if (photo) {
+      imageUrl = await envoyerPhoto(photo);
+      if (!imageUrl) {
+        setEnvoi(false);
+        return;
+      }
+    }
 
     const { data, error } = await supabase
       .from("produits")
@@ -52,8 +84,9 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
         nom: nom,
         prix: Number(prix),
         description: description || null,
+        image_url: imageUrl,
       })
-      .select("id, nom, prix, description, disponible")
+      .select("id, nom, prix, description, disponible, image_url")
       .single();
 
     if (error) {
@@ -63,6 +96,8 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
       setNom("");
       setPrix("");
       setDescription("");
+      setPhoto(null);
+      (e.target as HTMLFormElement).reset();
       setMessage("✅ Produit ajouté !");
     }
 
@@ -165,12 +200,22 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
           rows={2}
         />
 
+        <label className="flex flex-col gap-1 text-gray-700">
+          📷 Photo du produit (facultatif)
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+            className="border rounded-lg p-2 text-gray-900"
+          />
+        </label>
+
         <button
           type="submit"
           disabled={envoi}
           className="bg-green-600 text-white py-3 rounded-full font-semibold disabled:opacity-50"
         >
-          {envoi ? "Ajout..." : "Ajouter le produit"}
+          {envoi ? "Ajout en cours..." : "Ajouter le produit"}
         </button>
 
         {message && <p className="text-center text-gray-800">{message}</p>}
@@ -231,14 +276,27 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
               key={produit.id}
               className="border rounded-xl p-4 flex items-center justify-between gap-4"
             >
-              <div>
-                <p className="font-semibold text-gray-900">{produit.nom}</p>
-                <p className="text-green-700 font-bold">
-                  {produit.prix.toLocaleString("fr-FR")} FCFA
-                </p>
-                {produit.description && (
-                  <p className="text-sm text-gray-500">{produit.description}</p>
+              <div className="flex items-center gap-4">
+                {produit.image_url ? (
+                  <img
+                    src={produit.image_url}
+                    alt={produit.nom}
+                    className="w-20 h-20 object-cover rounded-lg"
+                  />
+                ) : (
+                  <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">
+                    📦
+                  </div>
                 )}
+                <div>
+                  <p className="font-semibold text-gray-900">{produit.nom}</p>
+                  <p className="text-green-700 font-bold">
+                    {produit.prix.toLocaleString("fr-FR")} FCFA
+                  </p>
+                  {produit.description && (
+                    <p className="text-sm text-gray-500">{produit.description}</p>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col gap-2 items-end">
