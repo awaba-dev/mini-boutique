@@ -26,6 +26,8 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
   const [editNom, setEditNom] = useState("");
   const [editPrix, setEditPrix] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editPhoto, setEditPhoto] = useState<File | null>(null);
+  const [enregistrement, setEnregistrement] = useState(false);
 
   // Charger les produits de la boutique
   useEffect(() => {
@@ -54,7 +56,7 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
       .upload(chemin, fichier);
 
     if (error) {
-      setMessage("❌ Photo : " + error.message);
+      alert("❌ Photo : " + error.message);
       return null;
     }
 
@@ -140,14 +142,28 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
     setEditNom(produit.nom);
     setEditPrix(String(produit.prix));
     setEditDescription(produit.description ?? "");
+    setEditPhoto(null);
   }
 
   // Enregistrer la modification
   async function enregistrerModification(produit: Produit) {
+    setEnregistrement(true);
+
+    let imageUrl = produit.image_url;
+    if (editPhoto) {
+      const nouveauLien = await envoyerPhoto(editPhoto);
+      if (!nouveauLien) {
+        setEnregistrement(false);
+        return;
+      }
+      imageUrl = nouveauLien;
+    }
+
     const nouvellesValeurs = {
       nom: editNom,
       prix: Number(editPrix),
       description: editDescription || null,
+      image_url: imageUrl,
     };
 
     const { error } = await supabase
@@ -165,6 +181,8 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
     } else {
       alert("❌ " + error.message);
     }
+
+    setEnregistrement(false);
   }
 
   return (
@@ -255,12 +273,22 @@ export default function Produits({ boutiqueId }: { boutiqueId: string }) {
                 rows={2}
                 placeholder="Description (facultatif)"
               />
+              <label className="flex flex-col gap-1 text-gray-700 text-sm">
+                📷 {produit.image_url ? "Changer la photo" : "Ajouter une photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setEditPhoto(e.target.files?.[0] ?? null)}
+                  className="border rounded-lg p-2 text-gray-900"
+                />
+              </label>
               <div className="flex gap-2">
                 <button
                   onClick={() => enregistrerModification(produit)}
-                  className="bg-green-600 text-white px-4 py-2 rounded-full text-sm font-semibold"
+                  disabled={enregistrement}
+                  className="bg-green-600 text-white px-4 py-2 rounded-full text-sm font-semibold disabled:opacity-50"
                 >
-                  💾 Enregistrer
+                  {enregistrement ? "Enregistrement..." : "💾 Enregistrer"}
                 </button>
                 <button
                   onClick={() => setEnEdition(null)}

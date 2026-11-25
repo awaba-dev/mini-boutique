@@ -10,6 +10,7 @@ type Boutique = {
   nom: string;
   slug: string;
   whatsapp: string;
+  logo_url: string | null;
 };
 
 // Transforme "Chez Fatou Élégance" en "chez-fatou-elegance"
@@ -42,6 +43,7 @@ export default function TableauDeBordPage() {
   const [whatsapp, setWhatsapp] = useState("");
   const [message, setMessage] = useState("");
   const [envoi, setEnvoi] = useState(false);
+  const [envoiLogo, setEnvoiLogo] = useState(false);
 
   useEffect(() => {
     async function chargerDonnees() {
@@ -57,7 +59,7 @@ export default function TableauDeBordPage() {
 
       const { data: maBoutique } = await supabase
         .from("boutiques")
-        .select("id, nom, slug, whatsapp")
+        .select("id, nom, slug, whatsapp, logo_url")
         .eq("user_id", data.user.id)
         .maybeSingle();
 
@@ -82,7 +84,7 @@ export default function TableauDeBordPage() {
         slug: creerSlug(nom),
         whatsapp: nettoyerNumero(whatsapp),
       })
-      .select("id, nom, slug, whatsapp")
+      .select("id, nom, slug, whatsapp, logo_url")
       .single();
 
     if (error) {
@@ -96,6 +98,41 @@ export default function TableauDeBordPage() {
     }
 
     setEnvoi(false);
+  }
+
+  // Envoyer le logo et l'enregistrer dans la boutique
+  async function changerLogo(fichier: File) {
+    if (!userId || !boutique) return;
+    setEnvoiLogo(true);
+
+    const extension = fichier.name.split(".").pop();
+    const chemin = userId + "/logo-" + Date.now() + "." + extension;
+
+    const { error: erreurEnvoi } = await supabase.storage
+      .from("images")
+      .upload(chemin, fichier);
+
+    if (erreurEnvoi) {
+      alert("❌ Logo : " + erreurEnvoi.message);
+      setEnvoiLogo(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from("images").getPublicUrl(chemin);
+    const logoUrl = data.publicUrl;
+
+    const { error } = await supabase
+      .from("boutiques")
+      .update({ logo_url: logoUrl })
+      .eq("id", boutique.id);
+
+    if (error) {
+      alert("❌ " + error.message);
+    } else {
+      setBoutique({ ...boutique, logo_url: logoUrl });
+    }
+
+    setEnvoiLogo(false);
   }
 
   async function seDeconnecter() {
@@ -130,16 +167,48 @@ export default function TableauDeBordPage() {
         {boutique ? (
           /* La vendeuse a une boutique */
           <div className="bg-white p-8 rounded-2xl shadow-md flex flex-col gap-3">
-            <h1 className="text-2xl font-bold text-green-700">
-              🛍️ {boutique.nom}
-            </h1>
+            <div className="flex items-center gap-4">
+              {boutique.logo_url ? (
+                <img
+                  src={boutique.logo_url}
+                  alt={"Logo de " + boutique.nom}
+                  className="w-20 h-20 rounded-full object-cover border"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+                  🛍️
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <h1 className="text-2xl font-bold text-green-700">{boutique.nom}</h1>
+                <label className="text-sm text-green-700 underline cursor-pointer">
+                  {envoiLogo
+                    ? "Envoi du logo..."
+                    : boutique.logo_url
+                    ? "📷 Changer le logo"
+                    : "📷 Ajouter un logo"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={envoiLogo}
+                    onChange={(e) => {
+                      const fichier = e.target.files?.[0];
+                      if (fichier) changerLogo(fichier);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
             <p className="text-gray-700">
               📱 WhatsApp : <strong>+{boutique.whatsapp}</strong>
             </p>
             <p className="text-gray-700">
               🔗 Ton futur lien : <strong>/boutique/{boutique.slug}</strong>
             </p>
-             <Produits boutiqueId={boutique.id} />
+
+            <Produits boutiqueId={boutique.id} />
           </div>
         ) : (
           /* La vendeuse n'a pas encore de boutique */
