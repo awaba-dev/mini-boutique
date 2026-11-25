@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Produits from "./Produits";
 
 type Boutique = {
   id: string;
@@ -138,9 +139,7 @@ export default function TableauDeBordPage() {
             <p className="text-gray-700">
               🔗 Ton futur lien : <strong>/boutique/{boutique.slug}</strong>
             </p>
-            <p className="text-gray-500 text-sm">
-              Bientôt : ajoute tes produits ici ✨
-            </p>
+             <Produits boutiqueId={boutique.id} />
           </div>
         ) : (
           /* La vendeuse n'a pas encore de boutique */
